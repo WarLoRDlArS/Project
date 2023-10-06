@@ -1,67 +1,61 @@
+import sys
 import socket
 import threading
-from Main import *
 
-def portSearch(ServerSock,ServerIP):
-    port=1026
-    while port<66000:
+DFORM = 'utf-8'
+send_thread = []
+receive_thread = []
+def port_search_bind(server_socket,server_ip):
+    """Searches for an empty port and binds the server script to the ip and port"""
+    port = 1025
+    while port < 66000:
         try:
-            ServerSock.bind((ServerIP,port))
+            server_socket.bind((server_ip,server_port))
             break
-        except:
-            port+=1
+        except :
+            port = port+1
+
     return port
 
-def SendMessage(ClientSock,message):
-    while True: 
-        try: 
-            ClientSock.send(message.encode('utf-8'))
-        except Exception as e:
-            print(f"Exception in sending message:{message}") 
-            print(e)
+def Send(client_socket,message):
+     message_size = len(str(message).encode(DFORM))
+     client_socket.send(str(message_size).encode(DFORM))
+     if message_size <= 1024:
+         client_socket.send(message.encode(DFORM))
+     else:
+         for i in range(0,message_size,1024):
+             client_socket.send(message.encode(DFORM))
 
-def RecvMessage(ClientSock):
+def Receive(client_socket):
+    try:
+        while True: 
+            messagesize = int(client_socket.recv(1024).decode(DFORM))
+            message = ""
+            if messagesize <= 1024:
+                message = client_socket.recv(messagesize).decode(DFORM)
+            else :
+                for i in range(0,messagesize,1024):
+                    message += client_socket.recv(i).decode(DFORM)
+            print(message)
+            Send(client_socket, message)
+    except Exception as e:
+        print(f"Couldnt receive anything\nException {e}")
+
+def main():
+    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as server_socket:
+        server_ip = socket.gethostbyname(socket.gethostname())
+        server_port = port_search_bind(server_socket,server_ip)
+
+        print(f"Ip Address:{server_ip}\tPort: {server_port}")
+        server_socket.listen()
         while True:
-            try:
-                messageBuffer=b''
-                while True:
-                    chunk=ClientSock.recv(1024)
-                    if not chunk:
-                        break
-                    messageBuffer+=chunk
-                if not messageBuffer:
-                    break
-                message=messageBuffer.decode('utf-8')
-                print(message)
-                return message
-                
-            except Exception as e:
-                print("Exception in recieveing message\n\n")
-                print(f"Error: {str(e)}") 
-    
+            client_socket,client_address = server_socket.accept()
 
+            print(f"Client {client_address} Connected!!")
 
-with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as serverSocket:
-    ServerIP = socket.gethostbyname(socket.gethostname()) 
-    #bind to the port
-    #this function will also bind the socket
-    ServerPort= portSearch(serverSocket,ServerIP)
-    try:
-        serverSocket.bind((ServerIP,ServerPort))
-    except:
-        print("Server already binded")
+            thread = threading.Thread(target = Receive, args = (client_socket,))
+            receive_thread.append([client_socket,client_address,thread])
+            thread.start()
 
-    print(f"IP:{ServerIP}\tPort:{ServerPort}")
-
-    serverSocket.listen()
-    clientSocket,Clientadd=serverSocket.accept()
-    print(f"Client {Clientadd} connected")
-    
-    try:
-        recieve=threading.Thread(target=RecvMessage,args=(clientSocket,))
-        send=threading.Thread(target=SendMessage,args=(clientSocket,"hello from server"))
-        recieve.start()
-        send.start()
-    except:
-        print("Couldnt create threads")
-    print("Hello")
+if __name__ == "__main__":
+    main()
