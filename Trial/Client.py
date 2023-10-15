@@ -4,25 +4,11 @@ import sys
 import time
 
 FLAG = "\001"
-DFORM="utf-8" 
+DFORM = "utf-8"
 thread_list = []
-conditionStatus={"exit":False,}
-
-def message_input(ClientConn):
-    message = input("Enter Message :")
-    if message == "\exit": 
-        # for i in thread_list:
-        #     i.join()
-        # ClientConn.close()
-        conditionStatus["exit"]=True
-        print("Program Closing!!")
-        sys.exit()   
-    else :
-        return message   
+conditionStatus = {"exit": False, "disconnect": threading.Event()}
 
 def ClientConnect(serverIP, ServerPort):
-    """This function is used to Connect Client to the server
-    """
     clientConn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         clientConn.connect((serverIP, ServerPort))
@@ -33,15 +19,25 @@ def ClientConnect(serverIP, ServerPort):
         print(f"Exception {e}")
         sys.exit()
 
+def message_input(ClientConn):
+    message = input("Enter Message :")
+    if message == "\exit":
+        conditionStatus["exit"] = True
+        print("Program Closing!!")
+        conditionStatus["disconnect"].set()  # Set the event to signal server disconnection
+        sys.exit()
+    else:
+        return message
+
 def sendMessage(ClientConn):
-    while True:
+    while not conditionStatus["exit"]:
         message = message_input(ClientConn)
-        if message.lower() == 'exit':
+        if conditionStatus["exit"]:
             break
         try:
             message_size = len(str(message).encode(DFORM))
             ClientConn.send(str(message_size).encode(DFORM))
-            confirmation_flag = ClientConn.recv(1024).decode(DFORM)  # Receive the flag from the server
+            confirmation_flag = ClientConn.recv(1024).decode(DFORM)
             if confirmation_flag == FLAG:
                 if message_size <= 1024:
                     ClientConn.send(message.encode(DFORM))
@@ -55,9 +51,10 @@ def sendMessage(ClientConn):
         time.sleep(1)
 
 def recMessage(clientSock):
-    while True:
+    while not conditionStatus["exit"]:
         try:
             messagesize = int(clientSock.recv(1024).decode(DFORM))
+            clientSock.send(FLAG.encode(DFORM))
             message = ""
             if messagesize <= 1024:
                 message = clientSock.recv(messagesize).decode(DFORM)
@@ -68,21 +65,24 @@ def recMessage(clientSock):
                     message += clientSock.recv(chunk_size).decode(DFORM)
                     received_size += chunk_size
 
+            # Comment out or remove the line below if you don't want to print the size
+            # print(messagesize)
+            
+            # Print the message
             print(message)
         except Exception as e:
             print(f"Error in receiving message: {str(e)}")
             break
 
-
 def checkCondition(clientConn):
-    """
-    This function is used to check for various conditions like exit program,etc
-    """
-    while True:
+    while not conditionStatus["exit"]:
         if conditionStatus["exit"]:
-            for thread in thread_list:
-                thread.join()
             clientConn.close()
+            break
+        if conditionStatus["disconnect"].is_set():
+            # Add code here to send a specific message to the server for disconnection
+            print("Disconnecting from the server...")
+            # ...
             break
 
 def main():
@@ -93,14 +93,13 @@ def main():
     clientconn = ClientConnect(serverIP, serverPort)
 
     try:
-        send = threading.Thread(target=sendMessage, args=(clientconn,),daemon=True)
+        send = threading.Thread(target=sendMessage, args=(clientconn,), daemon=True)
         thread_list.append(send)
-        recv = threading.Thread(target=recMessage, args=(clientconn,),daemon=True)
+        recv = threading.Thread(target=recMessage, args=(clientconn,), daemon=True)
         thread_list.append(recv)
         send.start()
         recv.start()
         send.join()  # Wait for send thread to finish
-        clientconn.close()  # Close the socket after sending is done
         recv.join()  # Wait for receive thread to finish
 
     except Exception as e:
@@ -113,4 +112,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
